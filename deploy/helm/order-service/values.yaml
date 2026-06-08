@@ -1,0 +1,79 @@
+replicaCount: 3
+
+image:
+  repository: ghcr.io/example/order-service
+  tag: ""          # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  httpPort: 80
+  metricsPort: 9090
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 12
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# Non-secret config rendered into a ConfigMap.
+config:
+  APP_ENV: prod
+  LOG_LEVEL: info
+  HTTP_ADDR: ":8080"
+  METRICS_ADDR: ":9090"
+  REDIS_ADDR: redis-master:6379
+  REDIS_TTL: 10m
+  KAFKA_BROKERS: kafka-bootstrap:9092
+  KAFKA_TOPIC: orders.events
+  OUTBOX_POLL_INTERVAL: 2s
+  OUTBOX_BATCH_SIZE: "200"
+  OTEL_SERVICE_NAME: order-service
+  OTLP_ENDPOINT: ""
+  TRACE_SAMPLE_RATIO: "0.1"
+  AUTH_ENABLED: "true"
+  JWKS_URL: https://idp.example.com/.well-known/jwks.json
+  JWT_ISSUER: https://idp.example.com
+  JWT_AUDIENCE: order-service
+  RATE_LIMIT_RPS: "50"
+  RATE_LIMIT_BURST: "100"
+  IDEMPOTENCY_TTL: "24h"
+
+# Secrets: prefer existingSecret managed by External Secrets / Vault.
+secret:
+  create: true
+  existingSecret: ""
+  data:
+    POSTGRES_DSN: "postgres://order:CHANGE_ME@postgres:5432/orders?sslmode=require"
+    REDIS_PASSWORD: "CHANGE_ME"
+    # base64 32-byte keys, oldest->newest. openssl rand -base64 32
+    PII_ENCRYPTION_KEYS: "CHANGE_ME_BASE64_32_BYTES"
+
+migrations:
+  enabled: true
+  image: migrate/migrate:v4.17.1
+
+serviceMonitor:
+  enabled: false   # set true if Prometheus Operator is installed
+  interval: 15s
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
+  prometheus.io/path: "/metrics"

@@ -1,0 +1,72 @@
+# Zero-Trust service-to-service security via Istio service mesh.
+#
+# 1) PeerAuthentication: enforce STRICT mTLS — every in-mesh call to this
+#    namespace must present a mesh-issued client certificate. No plaintext.
+# 2) AuthorizationPolicy: default-deny, then explicitly allow only the
+#    identities (SPIFFE IDs) that are permitted to call the order service.
+#    This is BeyondProd-style workload identity + least privilege.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: orders
+spec:
+  mtls:
+    mode: STRICT
+---
+# Default-deny: an empty-rules AuthorizationPolicy denies all traffic in the
+# namespace unless a more specific allow policy matches.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: orders
+spec:
+  {}
+---
+# Allow only the API gateway and trusted internal callers to reach the service,
+# and only on the HTTP methods/paths they need.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-order-service
+  namespace: orders
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: order-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            # Workload identities (SPIFFE) of allowed callers.
+            principals:
+              - "cluster.local/ns/edge/sa/api-gateway"
+              - "cluster.local/ns/orders/sa/order-service"
+      to:
+        - operation:
+            methods: ["GET", "POST", "PATCH"]
+            paths: ["/v1/orders*"]
+    # Health/readiness probed by kubelet (no sidecar identity) — allow on ports.
+    - to:
+        - operation:
+            methods: ["GET"]
+            paths: ["/healthz", "/readyz"]
+---
+# Require a valid JWT at the mesh layer too (defence in depth alongside the
+# in-app verifier). Istio validates the signature via the same JWKS.
+apiVersion: security.istio.io/v1
+kind: RequestAuthentication
+metadata:
+  name: order-service-jwt
+  namespace: orders
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: order-service
+  jwtRules:
+    - issuer: "https://idp.example.com"
+      jwksUri: "https://idp.example.com/.well-known/jwks.json"
+      audiences:
+        - "order-service"
+      forwardOriginalToken: true

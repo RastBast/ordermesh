@@ -1,0 +1,189 @@
+openapi: 3.0.3
+info:
+  title: Order Service API
+  version: 1.0.0
+  description: >
+    HTTP API for the Order microservice. Money values are integers in minor
+    units (e.g. cents). Status transitions follow a strict state machine:
+    PENDING -> PAID -> SHIPPED, with PENDING/PAID -> CANCELLED.
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      responses:
+        "200":
+          description: Process is alive
+  /readyz:
+    get:
+      summary: Readiness probe (checks Postgres and Redis)
+      responses:
+        "200":
+          description: All dependencies reachable
+        "503":
+          description: One or more dependencies are down
+  /v1/orders:
+    post:
+      summary: Create an order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrderRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    get:
+      summary: List orders
+      parameters:
+        - in: query
+          name: customer_id
+          schema: { type: string, format: uuid }
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [PENDING, PAID, SHIPPED, CANCELLED]
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 100 }
+        - in: query
+          name: offset
+          schema: { type: integer, default: 0 }
+      responses:
+        "200":
+          description: A page of orders
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderList"
+  /v1/orders/{id}:
+    get:
+      summary: Get an order by id
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/orders/{id}/status:
+    patch:
+      summary: Change order status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangeStatusRequest"
+      responses:
+        "200":
+          description: Updated order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Invalid transition or version conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  responses:
+    BadRequest:
+      description: Malformed request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationError:
+      description: Business validation failed
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    CreateOrderRequest:
+      type: object
+      required: [customer_id, items]
+      properties:
+        customer_id: { type: string, format: uuid }
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/OrderItem" }
+    ChangeStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [PAID, SHIPPED, CANCELLED]
+    OrderItem:
+      type: object
+      required: [sku, quantity, unit_price, currency]
+      properties:
+        sku: { type: string }
+        name: { type: string }
+        quantity: { type: integer, minimum: 1 }
+        unit_price: { type: integer, minimum: 1, description: minor units }
+        currency: { type: string, example: USD }
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        customer_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [PENDING, PAID, SHIPPED, CANCELLED]
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/OrderItem" }
+        total_price: { type: integer }
+        currency: { type: string }
+        version: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    OrderList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Order" }
+        count: { type: integer }
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }

@@ -1,0 +1,8 @@
+apiVersion: v2
+name: order-service
+description: Order microservice (Go, Postgres, Redis, Kafka, transactional outbox)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+maintainers:
+  - name: Platform Team

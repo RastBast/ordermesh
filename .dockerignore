@@ -1,0 +1,15 @@
+.git
+.github
+bin
+dist
+coverage.out
+*.test
+.env
+.idea
+.vscode
+deploy/helm
+test
+README.md
+.local-go-root
+.gopath
+.cache
